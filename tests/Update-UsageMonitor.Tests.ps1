@@ -115,11 +115,44 @@ Describe 'Get-HttpErrorInfo' {
     }
 
     It 'reads the status code from a PowerShell 7 style response' {
-        $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::NotFound)
-        $record   = [pscustomobject]@{ Exception = [pscustomobject]@{ Response = $response } }
+        # System.Net.Http is not loaded by default in Windows PowerShell 5.1, so the
+        # real type has to be pulled in explicitly. Get-HttpErrorInfo itself is
+        # duck-typed and needs neither assembly - only this test does.
+        Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+        if (-not ('System.Net.Http.HttpResponseMessage' -as [type])) {
+            Set-ItResult -Skipped -Because 'System.Net.Http is unavailable on this runtime'
+            return
+        }
 
-        (Get-HttpErrorInfo -ErrorRecord $record).Status | Should -Be 404
-        $response.Dispose()
+        $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::NotFound)
+        try {
+            $record = [pscustomobject]@{ Exception = [pscustomobject]@{ Response = $response } }
+            (Get-HttpErrorInfo -ErrorRecord $record).Status | Should -Be 404
+        }
+        finally {
+            $response.Dispose()
+        }
+    }
+
+    It 'reads rate-limit headers through the PowerShell 7 TryGetValues shape' {
+        # A stand-in for HttpResponseHeaders: same TryGetValues contract, no assembly
+        # dependency, so this half of the branch is exercised on both editions.
+        $headers = [pscustomobject]@{}
+        $headers | Add-Member -MemberType ScriptMethod -Name TryGetValues -Value {
+            param($name, [ref] $values)
+            if ($name -eq 'X-RateLimit-Reset') { $values.Value = @('1700000000'); return $true }
+            return $false
+        }
+
+        $record = [pscustomobject]@{
+            Exception = [pscustomobject]@{
+                Response = [pscustomobject]@{ StatusCode = 403; Headers = $headers }
+            }
+        }
+
+        $info = Get-HttpErrorInfo -ErrorRecord $record
+        $info.Status | Should -Be 403
+        $info.RateLimitReset | Should -Not -BeNullOrEmpty
     }
 
     It 'reports status 0 when the request never reached the server' {
