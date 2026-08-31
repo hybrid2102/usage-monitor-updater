@@ -23,6 +23,8 @@ jobs:
   release:
     name: Build and publish
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,3 +139,14 @@ jobs:
         with:
           name: release-package
           path: ./dist/
+
+  # Chained as a job rather than left to a "release: published" trigger, which never
+  # fires for releases created with GITHUB_TOKEN.
+  publish-gallery:
+    name: PowerShell Gallery
+    needs: release
+    uses: ./.github/workflows/publish-psgallery.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      dry_run: false
+    secrets: inherit

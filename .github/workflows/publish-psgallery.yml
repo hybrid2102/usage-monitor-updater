@@ -1,18 +1,36 @@
 name: Publish to PowerShell Gallery
 
-# Runs after a GitHub release is published, so the Gallery never gets a version that the
-# release pipeline refused to build. Publishing to the Gallery is irreversible - a version
-# can be unlisted but never replaced - hence the checks before Publish-Script and the
-# -WhatIf dry run that always executes first.
+# Called by the release workflow once the GitHub release exists, and runnable on its own
+# for a retry.
+#
+# It is NOT triggered by "release: published": a release created with the default
+# GITHUB_TOKEN does not raise that event - GitHub suppresses it to stop workflows
+# triggering each other in a loop - so such a trigger would silently never fire.
+#
+# Publishing to the Gallery is irreversible: a version can be unlisted, never replaced.
+# Hence the checks before Publish-Script and the -WhatIf dry run that always runs first.
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v1.1.0'
+        required: true
+        type: string
+      dry_run:
+        description: 'Validate only, do not publish'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      PSGALLERY_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to publish, e.g. v1.1.0'
         required: true
+        type: string
       dry_run:
         description: 'Validate only, do not publish'
         type: boolean
@@ -28,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          ref: ${{ inputs.tag }}
 
       - name: Validate the script metadata
         id: meta
@@ -39,7 +57,7 @@ jobs:
           Write-Host "Version : $($info.Version)"
           Write-Host "Author  : $($info.Author)"
 
-          $tag = '${{ github.event.inputs.tag || github.event.release.tag_name }}'
+          $tag = '${{ inputs.tag }}'
           $expected = $tag.TrimStart('v')
 
           # A Gallery version that disagrees with the tag is unfixable after the fact:
@@ -87,7 +105,7 @@ jobs:
           Write-Host 'Dry run completed.'
 
       - name: Publish
-        if: steps.existing.outputs.skip == 'false' && github.event.inputs.dry_run != 'true'
+        if: steps.existing.outputs.skip == 'false' && inputs.dry_run != true
         shell: pwsh
         env:
           PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
@@ -97,7 +115,7 @@ jobs:
           Write-Host "Published Update-UsageMonitor ${{ steps.meta.outputs.version }}."
 
       - name: Confirm the Gallery has it
-        if: steps.existing.outputs.skip == 'false' && github.event.inputs.dry_run != 'true'
+        if: steps.existing.outputs.skip == 'false' && inputs.dry_run != true
         shell: pwsh
         run: |
           # Indexing is not instant; poll rather than assume.
