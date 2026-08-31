@@ -1,0 +1,112 @@
+name: Publish to PowerShell Gallery
+
+# Runs after a GitHub release is published, so the Gallery never gets a version that the
+# release pipeline refused to build. Publishing to the Gallery is irreversible - a version
+# can be unlisted but never replaced - hence the checks before Publish-Script and the
+# -WhatIf dry run that always executes first.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v1.1.0'
+        required: true
+      dry_run:
+        description: 'Validate only, do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - name: Validate the script metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $info = Test-ScriptFileInfo -Path ./Update-UsageMonitor.ps1
+          Write-Host "Name    : $($info.Name)"
+          Write-Host "Version : $($info.Version)"
+          Write-Host "Author  : $($info.Author)"
+
+          $tag = '${{ github.event.inputs.tag || github.event.release.tag_name }}'
+          $expected = $tag.TrimStart('v')
+
+          # A Gallery version that disagrees with the tag is unfixable after the fact:
+          # the Gallery does not allow republishing a version.
+          if ($info.Version -ne $expected) {
+            throw "PSScriptInfo .VERSION is $($info.Version) but the tag is $tag. Update the .VERSION line before tagging."
+          }
+          if (-not $info.Description) { throw 'The script has no description; the Gallery listing would be empty.' }
+
+          "version=$($info.Version)" | Out-File $env:GITHUB_OUTPUT -Append
+
+      - name: Check whether this version is already on the Gallery
+        id: existing
+        shell: pwsh
+        run: |
+          $version = '${{ steps.meta.outputs.version }}'
+          $found = Find-Script -Name Update-UsageMonitor -RequiredVersion $version -ErrorAction SilentlyContinue
+          if ($found) {
+            Write-Host "::warning::Version $version is already published - nothing to do."
+            "skip=true" | Out-File $env:GITHUB_OUTPUT -Append
+          }
+          else {
+            "skip=false" | Out-File $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Dry run
+        if: steps.existing.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) {
+            throw 'The PSGALLERY_API_KEY secret is not set. Add it in Settings > Secrets and variables > Actions.'
+          }
+          # Copied to a clean folder because Publish-Script uploads the whole folder it is
+          # given; the repository contains tests and CI files that have no business on the
+          # Gallery.
+          $staging = Join-Path $env:RUNNER_TEMP 'psgallery'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Copy-Item ./Update-UsageMonitor.ps1 -Destination $staging
+          "staging=$staging" | Out-File $env:GITHUB_ENV -Append
+
+          Publish-Script -Path (Join-Path $staging 'Update-UsageMonitor.ps1') `
+                         -NuGetApiKey $env:PSGALLERY_API_KEY -WhatIf
+          Write-Host 'Dry run completed.'
+
+      - name: Publish
+        if: steps.existing.outputs.skip == 'false' && github.event.inputs.dry_run != 'true'
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          Publish-Script -Path (Join-Path $env:staging 'Update-UsageMonitor.ps1') `
+                         -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
+          Write-Host "Published Update-UsageMonitor ${{ steps.meta.outputs.version }}."
+
+      - name: Confirm the Gallery has it
+        if: steps.existing.outputs.skip == 'false' && github.event.inputs.dry_run != 'true'
+        shell: pwsh
+        run: |
+          # Indexing is not instant; poll rather than assume.
+          $version = '${{ steps.meta.outputs.version }}'
+          foreach ($attempt in 1..10) {
+            if (Find-Script -Name Update-UsageMonitor -RequiredVersion $version -ErrorAction SilentlyContinue) {
+              Write-Host "Version $version is live on the Gallery."
+              exit 0
+            }
+            Start-Sleep -Seconds 30
+          }
+          Write-Host "::warning::Version $version is not indexed yet. This is usually just Gallery lag - check https://www.powershellgallery.com/packages/Update-UsageMonitor"

@@ -41,6 +41,19 @@ jobs:
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
 
+      - name: Verify the script version matches the tag
+        shell: pwsh
+        run: |
+          # The PSScriptInfo .VERSION is what the PowerShell Gallery publishes under, and
+          # the Gallery never lets a version be replaced. Catching a mismatch here, before
+          # anything is published anywhere, is the only cheap moment to catch it.
+          $info = Test-ScriptFileInfo -Path ./Update-UsageMonitor.ps1
+          $expected = '${{ steps.version.outputs.version }}'
+          if ($info.Version -ne $expected) {
+            throw "PSScriptInfo .VERSION is $($info.Version) but the tag says $expected. Update the .VERSION line and re-tag."
+          }
+          Write-Host "Script version $($info.Version) matches the tag."
+
       - name: Verify the changelog documents this version
         shell: pwsh
         run: |

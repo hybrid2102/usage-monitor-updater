@@ -68,6 +68,28 @@ User-visible changes go in `CHANGELOG.md` under `## [Unreleased]`, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Purely internal refactors do
 not need an entry.
 
+## Cutting a release
+
+Releases are built and published by CI. There is nothing to build by hand.
+
+1. Bump `.VERSION` in the `<#PSScriptInfo #>` block at the top of `Update-UsageMonitor.ps1`.
+   This is the version the PowerShell Gallery publishes under, and the Gallery **never**
+   allows a version to be replaced - only unlisted. Get it right before tagging.
+2. Move the `## [Unreleased]` entries in `CHANGELOG.md` into a `## [X.Y.Z] - YYYY-MM-DD`
+   section and update the link references at the bottom.
+3. Commit, then push an annotated tag:
+
+   ```powershell
+   git tag -a v1.2.3 -m "v1.2.3 - short summary"
+   git push origin v1.2.3
+   ```
+
+The release workflow then refuses to publish unless the tag, the `.VERSION` line and a
+changelog section all agree, and unless the script parses. It builds the zip, attaches
+`SHA256SUMS.txt`, and creates the GitHub release. Publishing that release triggers the
+Gallery workflow, which validates the metadata again, skips silently if the version is
+already published, and always performs a `-WhatIf` dry run before the real upload.
+
 ## Scope
 
 This tool updates one application, in one folder, and restarts it. Requests that turn it

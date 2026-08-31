@@ -175,3 +175,30 @@ Describe 'Get-InstalledVersion' {
         Get-InstalledVersion -Path $file | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Test-GalleryInstall' {
+    <#
+        Install-Script drops the script in a shared scripts folder. Defaulting
+        -InstallDir to that folder would send the updater hunting for the application in
+        a system directory, so the case has to be recognised - and, just as importantly,
+        an ordinary folder that merely happens to be called "Scripts" must not be.
+    #>
+
+    It 'recognises <Path> as a Gallery install' -TestCases @(
+        @{ Path = 'C:\Users\jo\Documents\WindowsPowerShell\Scripts' }
+        @{ Path = 'C:\Users\jo\Documents\PowerShell\Scripts' }
+        @{ Path = 'C:\Program Files\WindowsPowerShell\Scripts' }
+        @{ Path = 'C:\Program Files\PowerShell\Scripts\' }
+    ) {
+        Test-GalleryInstall -Path $Path | Should -BeTrue
+    }
+
+    It 'leaves <Path> alone' -TestCases @(
+        @{ Path = 'C:\Tools\UsageMonitor' }
+        @{ Path = 'D:\Projects\MyApp\Scripts' }
+        @{ Path = 'C:\Users\jo\PowerShell' }
+        @{ Path = 'C:\WindowsPowerShell' }
+    ) {
+        Test-GalleryInstall -Path $Path | Should -BeFalse
+    }
+}

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/hybrid2102/usage-monitor-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/hybrid2102/usage-monitor-updater/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/hybrid2102/usage-monitor-updater?label=download&color=2ea44f)](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/Update-UsageMonitor?label=PSGallery&color=5391FE)](https://www.powershellgallery.com/packages/Update-UsageMonitor)
 [![PowerShell 5.1 | 7+](https://img.shields.io/badge/powershell-5.1%20%7C%207%2B-5391FE)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -78,6 +79,24 @@ If verification fails, the installed executable is left untouched.
 - Internet access to `api.github.com` and `objects.githubusercontent.com`
 
 ## Install
+
+### From the PowerShell Gallery
+
+```powershell
+Install-Script -Name Update-UsageMonitor -Scope CurrentUser
+```
+
+Installed this way the script lives in a shared scripts folder, not beside the application,
+so **`-InstallDir` is required**:
+
+```powershell
+Update-UsageMonitor.ps1 -InstallDir 'C:\Tools\UsageMonitor'
+```
+
+Run it without `-InstallDir` and it will say so rather than hunting for the executable in a
+system folder. Update it later with `Update-Script -Name Update-UsageMonitor`.
+
+### From a release
 
 1. Download the [latest release](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
    and unpack it — you need `Update-UsageMonitor.ps1` and `Update-UsageMonitor.bat`.

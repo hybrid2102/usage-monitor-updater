@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-31
+
+### Added
+
+- The script is published to the [PowerShell Gallery](https://www.powershellgallery.com/packages/Update-UsageMonitor):
+  `Install-Script -Name Update-UsageMonitor`. A `PSScriptInfo` block carries the metadata,
+  and a workflow publishes it after each GitHub release - validating that the tag, the
+  `.VERSION` line and the changelog agree, skipping versions already published, and always
+  performing a dry run first, because the Gallery never allows a version to be replaced.
+- `Test-GalleryInstall`: installed from the Gallery the script sits in a shared scripts
+  folder, so defaulting `-InstallDir` to its own location would send the updater looking
+  for the application in a system directory. That case is now detected and reported with
+  the command to run instead, rather than failing obscurely. Covered by eight new tests,
+  including folders merely *named* `Scripts`, which must not be mistaken for it.
+
+### Changed
+
+- The description shown on the Gallery listing now opens with what the tool does, instead
+  of the numbered list of internal steps.
+
 ## [1.0.3] - 2026-08-31
 
 No changes to the script: `Update-UsageMonitor.ps1` is unchanged since 1.0.1. This release
@@ -108,7 +128,8 @@ in 1.0.1 the pipeline was rejected by GitHub before it could run a single test.
 - `-Force`, `-SkipChangelog`, `-NonInteractive`, `-SkipSignatureCheck`, `-Repo`,
   `-InstallDir`, `-ExeName`, plus `-WhatIf` support and documented exit codes.
 
-[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.0...v1.0.1

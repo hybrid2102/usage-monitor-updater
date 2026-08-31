@@ -1,9 +1,52 @@
+<#PSScriptInfo
+
+.VERSION 1.1.0
+
+.GUID be86f5c3-bbbf-44ad-8fb1-4b16b4faafef
+
+.AUTHOR hybrid2102
+
+.COMPANYNAME
+
+.COPYRIGHT (c) 2026 hybrid2102. MIT licensed.
+
+.TAGS Windows Updater GitHub Claude UsageMonitor Tray AutoUpdate
+
+.LICENSEURI https://github.com/hybrid2102/usage-monitor-updater/blob/main/LICENSE
+
+.PROJECTURI https://github.com/hybrid2102/usage-monitor-updater
+
+.ICONURI
+
+.EXTERNALMODULEDEPENDENCIES
+
+.REQUIREDSCRIPTS
+
+.EXTERNALSCRIPTDEPENDENCIES
+
+.RELEASENOTES
+https://github.com/hybrid2102/usage-monitor-updater/blob/main/CHANGELOG.md
+
+.PRIVATEDATA
+
+#>
+
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Updates UsageMonitorForClaude.exe to the latest GitHub release and restarts it.
 
 .DESCRIPTION
+    Updates Usage Monitor for Claude to its latest GitHub release in one step, and shows
+    the release notes while the download is still running - the progress indicator is
+    drawn below the text instead of over it, so waiting time is reading time.
+
+    The downloaded build is verified against the SHA-256 digest GitHub publishes for it
+    and against its Authenticode signature; nothing is installed if verification fails.
+    The new file is staged beside the target so the final swap is atomic, and the previous
+    build is kept until that swap succeeds.
+
     Steps:
       1. Reads the latest release of the given GitHub repository.
       2. Compares it with the version of the installed executable. If they match,
@@ -25,7 +68,12 @@
     repository.
 
 .PARAMETER InstallDir
-    Folder holding the executable. Defaults to the folder containing this script.
+    Folder holding the executable. Defaults to the folder containing this script, which is
+    the right answer when the script sits next to the executable.
+
+    Installed from the PowerShell Gallery the script lives in a shared scripts folder
+    instead, so -InstallDir is required there. That case is detected and reported rather
+    than silently searching a system folder for an executable that is not in it.
 
 .PARAMETER ExeName
     File name of the executable to update. Defaults to UsageMonitorForClaude.exe.
@@ -325,6 +373,23 @@ function Test-DirectoryWritable {
     catch {
         return $false
     }
+}
+
+<#
+    True when the script is running from a PowerShell Gallery scripts folder rather than
+    from beside the application. Install-Script puts scripts under
+    <Documents>\WindowsPowerShell\Scripts, <Documents>\PowerShell\Scripts, or the
+    machine-wide equivalent under Program Files - none of which is an install folder for
+    the application being updated.
+#>
+function Test-GalleryInstall {
+    param([Parameter(Mandatory)][string] $Path)
+
+    $normalised = $Path.TrimEnd('\', '/')
+    if ($normalised -notmatch '[\\/]Scripts$') { return $false }
+
+    $parent = Split-Path -Parent $normalised
+    return ($parent -match '[\\/](WindowsPowerShell|PowerShell)$')
 }
 
 function Test-Elevated {
@@ -789,6 +854,17 @@ function Invoke-Update {
             Write-Fail 'Cannot determine the script folder - pass -InstallDir explicitly.'
             return $Script:ExitPlatform
         }
+
+        # Installed from the PowerShell Gallery, the script sits in a shared scripts
+        # folder that has nothing to do with the application. Defaulting to it would send
+        # the updater looking for an executable in a system directory, so say so instead.
+        if (Test-GalleryInstall -Path $PSScriptRoot) {
+            Write-Fail 'This script was installed from the PowerShell Gallery, so its own folder is not the application folder.'
+            Write-Detail 'Pass -InstallDir with the folder holding the executable, for example:'
+            Write-Detail "  Update-UsageMonitor.ps1 -InstallDir 'C:\Tools\UsageMonitor'" ([ConsoleColor]::Gray)
+            return $Script:ExitPlatform
+        }
+
         $InstallDir = $PSScriptRoot
     }
     $InstallDir = (Resolve-Path -LiteralPath $InstallDir -ErrorAction Stop).Path
