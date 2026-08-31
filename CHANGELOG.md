@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-31
+
+No changes to the script itself: `Update-UsageMonitor.ps1` is byte-for-byte the one shipped
+in 1.0.1. This release exists so that a tag finally points at a commit whose CI is green —
+in 1.0.1 the pipeline was rejected by GitHub before it could run a single test.
+
 ### Fixed
 
 - CI: the Pester matrix used `${{ matrix.shell }}` in a step's `shell:` key, which GitHub
@@ -16,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a real `HttpResponseMessage` threw there. The assembly is loaded explicitly, the test
   skips cleanly if it is unavailable, and a stub-based test covers the same branch on both
   editions. This was a defect in the test harness, not in the script.
+
+### Added
+
+- A 17th test exercising the PowerShell 7 rate-limit header path through a stub, so that
+  branch is covered on both editions regardless of assembly availability.
 
 ## [1.0.1] - 2026-08-31
 
@@ -74,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-Force`, `-SkipChangelog`, `-NonInteractive`, `-SkipSignatureCheck`, `-Repo`,
   `-InstallDir`, `-ExeName`, plus `-WhatIf` support and documented exit codes.
 
-[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hybrid2102/usage-monitor-updater/releases/tag/v1.0.0
