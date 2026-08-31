@@ -1,5 +1,8 @@
 # Usage Monitor Updater
 
+[![Latest release](https://img.shields.io/github/v/release/hybrid2102/usage-monitor-updater?label=download&color=2ea44f)](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A single PowerShell script that updates [Usage Monitor for Claude](https://github.com/jens-duttke/usage-monitor-for-claude)
 to the latest GitHub release and restarts it — including a second instance, if you run one.
 
@@ -41,7 +44,8 @@ If verification fails, the installed executable is left untouched.
 
 ## Install
 
-1. Download `Update-UsageMonitor.ps1` and `Update-UsageMonitor.bat`.
+1. Download the [latest release](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
+   and unpack it — you need `Update-UsageMonitor.ps1` and `Update-UsageMonitor.bat`.
 2. Put both **next to `UsageMonitorForClaude.exe`**, in a folder you can write to.
    (Installing under `C:\Program Files\…` works too, but then run the script as
    Administrator.)
