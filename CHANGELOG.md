@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-31
+
+No changes to the script: `Update-UsageMonitor.ps1` is unchanged since 1.0.1. This release
+exercises the new automated pipeline - it is the first artefact built by CI rather than on a
+maintainer's machine, and the first to ship checksums.
+
+### Added
+
+- Releases are now built and published by GitHub Actions on a tag push. The workflow
+  refuses to publish if `CHANGELOG.md` has no section for the version being tagged, or if
+  the script does not parse, and attaches `SHA256SUMS.txt` for every artefact.
+- Smoke test in CI: the script is run end to end under `-WhatIf` and the job asserts that
+  no file is created. The unit tests only cover pure functions, so nothing previously
+  proved the script actually ran.
+- Dependabot for GitHub Actions, and issue/PR templates that ask up front for
+  `$PSVersionTable` and `-Verbose` output.
+
+### Changed
+
+- Workflow actions are pinned to commit SHAs, so a moved tag cannot change what runs in CI.
+- `main` is protected: the five CI checks are required, force pushes and deletions are
+  refused, and a linear history is enforced.
+
 ## [1.0.2] - 2026-08-31
 
 No changes to the script itself: `Update-UsageMonitor.ps1` is byte-for-byte the one shipped
@@ -85,7 +108,8 @@ in 1.0.1 the pipeline was rejected by GitHub before it could run a single test.
 - `-Force`, `-SkipChangelog`, `-NonInteractive`, `-SkipSignatureCheck`, `-Repo`,
   `-InstallDir`, `-ExeName`, plus `-WhatIf` support and documented exit codes.
 
-[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hybrid2102/usage-monitor-updater/releases/tag/v1.0.0
