@@ -1,0 +1,18 @@
+version: 2
+
+updates:
+  # Workflow actions are pinned to commit SHAs so a moved tag cannot silently change
+  # what runs in CI. That safety costs visibility - a pinned SHA never looks outdated -
+  # so Dependabot is what tells us a new version exists.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'
+    labels:
+      - dependencies
+    groups:
+      actions:
+        patterns:
+          - '*'

@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a change to how the updater behaves
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This tool updates one application, in one folder, and restarts it. Requests that
+        turn it into a general-purpose package manager are likely to be declined — but a
+        well-argued case is welcome, and cheaper to discuss before you write the code.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+      description: Describe the situation you are in, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Existing parameters, a scheduled task, a wrapper script ...
+    validations:
+      required: false

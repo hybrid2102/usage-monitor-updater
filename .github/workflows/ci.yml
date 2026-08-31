@@ -15,7 +15,7 @@ jobs:
     name: PSScriptAnalyzer
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
@@ -45,7 +45,7 @@ jobs:
     name: Pester (PowerShell 7)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Pester
         shell: pwsh
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pester-results-pwsh
           path: ./testresults.xml
@@ -75,7 +75,7 @@ jobs:
     name: Pester (Windows PowerShell 5.1)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Pester
         shell: powershell
@@ -95,7 +95,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pester-results-windows-powershell
           path: ./testresults.xml
@@ -105,7 +105,7 @@ jobs:
     name: Parse check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Parse every script
         shell: pwsh
@@ -120,3 +120,36 @@ jobs:
             }
           }
           if ($failed) { throw 'One or more scripts failed to parse.' }
+
+  smoke:
+    name: Smoke test (-WhatIf)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run the script end to end without changing anything
+        shell: pwsh
+        run: |
+          # The unit tests cover pure functions; nothing else proves the script actually
+          # runs. This exercises the real flow - argument binding, the GitHub call, asset
+          # selection, the changelog renderer - while -WhatIf blocks every side effect.
+          $probe = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+
+          & ./Update-UsageMonitor.ps1 -InstallDir $probe -ExeName 'Probe.exe' -NonInteractive -WhatIf
+          $code = $LASTEXITCODE
+
+          # Exit code 3 is a network/rate-limit problem, not a defect in the script:
+          # unauthenticated GitHub API calls from shared runner IPs do get throttled.
+          if ($code -eq 3) {
+            Write-Host '::warning::GitHub API unreachable or rate limited - smoke test inconclusive.'
+            exit 0
+          }
+          if ($code -ne 0) { throw "Smoke test failed with exit code $code." }
+
+          $leftovers = @(Get-ChildItem -LiteralPath $probe -Force)
+          if ($leftovers.Count -gt 0) {
+            $leftovers | ForEach-Object { Write-Host "unexpected: $($_.Name)" }
+            throw '-WhatIf must not create any file.'
+          }
+          Write-Host 'Smoke test passed and left no files behind.'

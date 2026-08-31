@@ -1,0 +1,71 @@
+name: Bug report
+description: Something went wrong while updating
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The two fields below are asked for because the two
+        PowerShell editions have already diverged in ways that caused a real bug —
+        knowing which one you are on usually explains half the problem.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+      placeholder: |
+        I double-clicked Update-UsageMonitor.bat and it ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: verbose-output
+    attributes:
+      label: Output of the failing run
+      description: >
+        Run it again with -Verbose and paste everything. Paths are included in the
+        output — remove anything you would rather not publish.
+      placeholder: |
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\Update-UsageMonitor.ps1 -Verbose
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: psversion
+    attributes:
+      label: PowerShell edition and version
+      description: 'Paste the output of: $PSVersionTable'
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: script-version
+    attributes:
+      label: Updater version
+      description: The release you downloaded, e.g. v1.0.2
+    validations:
+      required: true
+
+  - type: input
+    id: install-dir
+    attributes:
+      label: Where the executable is installed
+      description: >
+        A protected location such as C:\Program Files behaves differently from a
+        folder you own.
+      placeholder: 'C:\Tools\UsageMonitor'
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: This is about the updater, not about Usage Monitor for Claude itself (that belongs [upstream](https://github.com/jens-duttke/usage-monitor-for-claude/issues)).
+          required: true
+        - label: I checked the [troubleshooting section](https://github.com/hybrid2102/usage-monitor-updater#troubleshooting).
+          required: true

@@ -1,0 +1,126 @@
+name: Release
+
+# Publishing is done by CI, not by hand on a maintainer's machine: the artefact is then
+# reproducible from a known commit, and every release carries checksums produced by the
+# same pipeline that tested it.
+#
+# To cut a release: update CHANGELOG.md, commit, then push an annotated tag (v1.2.3).
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build the release for, e.g. v1.0.3'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { $env:GITHUB_REF -replace '^refs/tags/', '' }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Unexpected tag format: '$tag'" }
+          "tag=$tag"                    | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$($tag.TrimStart('v'))" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Releasing $tag"
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+
+      - name: Verify the changelog documents this version
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $changelog = Get-Content ./CHANGELOG.md -Raw
+          if ($changelog -notmatch "(?m)^##\s*\[$([regex]::Escape($version))\]") {
+            throw "CHANGELOG.md has no '## [$version]' section. Document the release before tagging it."
+          }
+          Write-Host "Changelog section for $version found."
+
+      - name: Build the package
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'usage-monitor-updater'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+
+          # Only what an end user needs: the tests, CI config and contributor docs stay
+          # in the repository.
+          $payload = @(
+            'Update-UsageMonitor.ps1'
+            'Update-UsageMonitor.bat'
+            'README.md'
+            'CHANGELOG.md'
+            'SECURITY.md'
+            'LICENSE'
+          )
+          Copy-Item $payload -Destination $staging
+
+          New-Item -ItemType Directory -Path ./dist -Force | Out-Null
+          $zip = "./dist/usage-monitor-updater-${{ steps.version.outputs.tag }}.zip"
+          Compress-Archive -Path $staging -DestinationPath $zip
+
+          # Checksums for every published artefact, and for the script on its own so it
+          # can be verified without unpacking. This tool refuses to install a binary it
+          # cannot check; shipping without checksums of its own would be incoherent.
+          $lines = foreach ($file in @($zip, './Update-UsageMonitor.ps1')) {
+            $hash = Get-FileHash -LiteralPath $file -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), (Split-Path $file -Leaf)
+          }
+          $lines | Set-Content ./dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content ./dist/SHA256SUMS.txt | Write-Host
+
+      - name: Verify the package contains a working script
+        shell: pwsh
+        run: |
+          # A release whose script does not even parse must never reach users.
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./Update-UsageMonitor.ps1), [ref]$null, [ref]$errors)
+          if ($errors) { throw "The script does not parse: $($errors[0].Message)" }
+
+          $expected = 6
+          $entries = [IO.Compression.ZipFile]::OpenRead((Resolve-Path "./dist/usage-monitor-updater-${{ steps.version.outputs.tag }}.zip")).Entries
+          if ($entries.Count -ne $expected) { throw "Expected $expected files in the zip, found $($entries.Count)." }
+          Write-Host "Package contains $($entries.Count) files."
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $notes = "See the [changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what changed in this version.`n`n" +
+                   "Verify your download against ``SHA256SUMS.txt``:`n`n" +
+                   '```powershell' + "`n" +
+                   "Get-FileHash .\usage-monitor-updater-$tag.zip -Algorithm SHA256`n" +
+                   '```' + "`n`nBuilt by CI from ``$($env:GITHUB_SHA)``."
+
+          $notes | Set-Content ./dist/notes.md -Encoding utf8
+
+          if (gh release view $tag 2>$null) {
+            gh release upload $tag ./dist/usage-monitor-updater-$tag.zip ./dist/SHA256SUMS.txt --clobber
+          }
+          else {
+            gh release create $tag ./dist/usage-monitor-updater-$tag.zip ./dist/SHA256SUMS.txt `
+              --title $tag --notes-file ./dist/notes.md --latest
+          }
+
+      - name: Upload the package as a build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-package
+          path: ./dist/
