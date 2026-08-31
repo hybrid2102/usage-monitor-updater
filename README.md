@@ -81,6 +81,15 @@ If verification fails, the installed executable is left untouched.
 
 1. Download the [latest release](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
    and unpack it — you need `Update-UsageMonitor.ps1` and `Update-UsageMonitor.bat`.
+
+   Releases are built by CI, not on anyone's laptop, and every one ships a
+   `SHA256SUMS.txt`. A tool that refuses to install a binary whose digest it cannot check
+   should let you do the same to it:
+
+   ```powershell
+   Get-FileHash .\usage-monitor-updater-v1.0.3.zip -Algorithm SHA256
+   ```
+
 2. Put both **next to `UsageMonitorForClaude.exe`**, in a folder you can write to.
    (Installing under `C:\Program Files\…` works too, but then run the script as
    Administrator.)
