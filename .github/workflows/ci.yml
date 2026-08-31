@@ -35,26 +35,24 @@ jobs:
             Write-Host 'No findings.'
           }
 
-  test:
-    name: Pester (${{ matrix.shell }})
+  # The two editions are separate jobs rather than a matrix on purpose: the `shell:`
+  # key does not accept the matrix context (GitHub rejects the whole workflow with
+  # "Unrecognized named-value: 'matrix'"), so the interpreter cannot be parameterised.
+  # Both are exercised because they differ in ways that have already caused a real bug -
+  # see Get-HttpErrorInfo.
+
+  test-pwsh:
+    name: Pester (PowerShell 7)
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The script targets both editions and they differ in ways that have already
-        # caused bugs (exception types, $IsWindows), so both are exercised.
-        include:
-          - shell: pwsh          # PowerShell 7+
-          - shell: powershell    # Windows PowerShell 5.1
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Pester
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
 
       - name: Run tests
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           Import-Module Pester -MinimumVersion 5.5.0
           $config = New-PesterConfiguration
@@ -69,7 +67,37 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pester-results-${{ matrix.shell }}
+          name: pester-results-pwsh
+          path: ./testresults.xml
+          if-no-files-found: ignore
+
+  test-windows-powershell:
+    name: Pester (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: powershell
+        run: Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run tests
+        shell: powershell
+        run: |
+          Import-Module Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = './testresults.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-results-windows-powershell
           path: ./testresults.xml
           if-no-files-found: ignore
 
