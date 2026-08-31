@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: the Pester matrix used `${{ matrix.shell }}` in a step's `shell:` key, which GitHub
+  rejects outright (`Unrecognized named-value: 'matrix'`) — the workflow failed at startup
+  with no jobs, so nothing was ever tested. Each edition now has its own job.
+- Tests: `System.Net.Http` is not loaded by default in Windows PowerShell 5.1, so building
+  a real `HttpResponseMessage` threw there. The assembly is loaded explicitly, the test
+  skips cleanly if it is unavailable, and a stub-based test covers the same branch on both
+  editions. This was a defect in the test harness, not in the script.
+
 ## [1.0.1] - 2026-08-31
 
 ### Fixed
