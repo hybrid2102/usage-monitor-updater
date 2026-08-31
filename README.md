@@ -1,14 +1,49 @@
 # Usage Monitor Updater
 
+[![CI](https://github.com/hybrid2102/usage-monitor-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/hybrid2102/usage-monitor-updater/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/hybrid2102/usage-monitor-updater?label=download&color=2ea44f)](https://github.com/hybrid2102/usage-monitor-updater/releases/latest)
+[![PowerShell 5.1 | 7+](https://img.shields.io/badge/powershell-5.1%20%7C%207%2B-5391FE)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A single PowerShell script that updates [Usage Monitor for Claude](https://github.com/jens-duttke/usage-monitor-for-claude)
 to the latest GitHub release and restarts it — including a second instance, if you run one.
 
-It shows the **changelog of the new version while the download is running**: the progress
-indicator is one line redrawn in place *below* the release notes, so the text stays readable
-instead of being covered by the PowerShell progress banner.
+## Why this exists
+
+Usage Monitor has no auto-update. Keeping it current means checking the releases page,
+closing the tray app (and the second instance, if you run one with different settings),
+downloading the new build, overwriting the old one, and starting everything again. That is
+five manual steps you have to remember to repeat, and the changelog is on a web page you
+probably skipped.
+
+This script does all of it in one double-click, **and puts the release notes on screen
+while the download runs** — so the time you spend waiting is the time you spend reading
+what changed, instead of watching a progress bar.
+
+```text
+-- What's new in v1.21.0 ---------------------------------------
+
+  Added
+
+  - New `icon_style` setting - set it to "numbers" to show both
+    icon_fields values as two stacked percentages on the tray icon
+  - Extra usage without a monthly limit now appears in the popup
+
+  Fixed
+
+  - On systems with a non-UTF-8 code page, the tray icon no longer
+    stops updating after an automatic token renewal
+
+  Full release page: https://github.com/jens-duttke/...
+----------------------------------------------------------------
+
+==> Downloading UsageMonitorForClaude.exe (12.7 MB)...
+    [######################............]  64%  8.1 MB / 12.7 MB
+```
+
+The progress indicator is a single line redrawn in place *below* the notes. `Write-Progress`
+would paint a banner across the top of the console and cover them — which is exactly why it
+is not used.
 
 > **Not affiliated** with the author of Usage Monitor for Claude, or with Anthropic.
 > This is an unofficial convenience script.
@@ -146,18 +181,44 @@ PowerShell closes the window on exit. Use the `.bat`, which pauses at the end.
 not an error: upstream ships unsigned builds. The digest check already proved the file is
 byte-for-byte what GitHub serves.
 
-## Security notes
+**A `.bak` file is left next to the executable** — the update failed after the old build had
+been moved aside, and restoring it failed too. Rename it back manually; the script tells you
+so when it happens.
 
-This script downloads and runs an executable from the internet. Two things are worth knowing:
+Still stuck? Run with `-Verbose` and open an
+[issue](https://github.com/hybrid2102/usage-monitor-updater/issues) with that output and your
+`$PSVersionTable`.
 
-- Integrity is verified against GitHub's own published digest, not against a hash baked into
-  this script. That protects against a corrupted or intercepted download, **not** against a
-  compromised upstream release. Trust the upstream project as much as you would trust
-  downloading its installer by hand.
-- The script never runs the downloaded file with elevated privileges of its own, and never
-  sends anything anywhere: the only outbound calls are the GitHub API request and the asset
-  download.
+## Security
+
+Integrity is verified against GitHub's own published digest, not a hash baked into this
+script: that protects you from a corrupted or intercepted download, **not** from a
+compromised upstream release. Trust this tool exactly as much as you trust the upstream
+project — it automates a download you would otherwise do by hand, it does not add a trust
+layer on top of it.
+
+The full threat model, the verification policy table, and how to report a vulnerability are
+in [SECURITY.md](SECURITY.md).
+
+## Development
+
+```powershell
+Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+```
+
+```powershell
+Invoke-Pester -Path ./tests -Output Detailed
+```
+
+CI runs both on every push, plus a parse check, with the test suite executed on **Windows
+PowerShell 5.1 and PowerShell 7** — the two editions differ in ways that have already caused
+a real bug. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Usage Monitor for Claude is a separate project with its own
+license; this repository only ships the updater.

@@ -99,6 +99,10 @@ $Script:ExitReplace      = 5
 $Script:UserAgent = 'update-usage-monitor-script'
 $Script:ApiRoot   = 'https://api.github.com'
 
+# Progress rendering state, initialised in Invoke-Update.
+$Script:CanRedraw        = $false
+$Script:LastLoggedDecile = -1
+
 #endregion
 
 #region -------------------------------------------------------------------- ui
@@ -116,10 +120,14 @@ function Write-Rule {
     Write-Host $line -ForegroundColor DarkGray
 }
 
+<#
+    One Write-Host per line on purpose: splitting the prefix from the message with
+    -NoNewline puts them on separate lines as soon as the output is redirected to a
+    file or a CI log.
+#>
 function Write-Step {
     param([Parameter(Mandatory)][string] $Message)
-    Write-Host '==> ' -ForegroundColor Cyan -NoNewline
-    Write-Host $Message
+    Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
 function Write-Detail {
@@ -208,8 +216,7 @@ function Show-Changelog {
                     break
                 }
                 '^\s*[-*+]\s+(.+)$' {
-                    Write-Host '  - ' -ForegroundColor DarkCyan -NoNewline
-                    Write-Host $Matches[1].Trim()
+                    Write-Host "  - $($Matches[1].Trim())"
                     break
                 }
                 '^\s*$' {
@@ -232,15 +239,29 @@ function Show-Changelog {
 }
 
 <#
+    True when the output is a real console we can redraw a line on. Redirected output
+    (a log file, a pipeline, a CI job) has no cursor to move, so a carriage return would
+    just concatenate every frame into one enormous line.
+#>
+function Test-CanRedraw {
+    if ($Host.Name -ne 'ConsoleHost') { return $false }
+    try { return -not [Console]::IsOutputRedirected } catch { return $false }
+}
+
+<#
     Single-line progress indicator, redrawn with a carriage return. Deliberately not
     Write-Progress: in Windows PowerShell that paints a banner across the top of the
     console and would hide the changelog printed just above.
+
+    When the output is redirected it degrades to one plain line every 10%, so logs stay
+    readable instead of collecting a hundred overwritten frames.
 #>
 function Write-ProgressBar {
     param(
         [Parameter(Mandatory)][long] $Current,
         [long] $Total,
-        [int]  $Width = 34
+        [int]  $Width = 34,
+        [switch] $Final
     )
 
     if ($Total -gt 0) {
@@ -251,10 +272,21 @@ function Write-ProgressBar {
     }
     else {
         # No Content-Length header: show downloaded bytes only.
-        $text = '    [{0}] {1} downloaded' -f ('.' * $Width), (Format-Size $Current)
+        $ratio = 0
+        $text  = '    [{0}] {1} downloaded' -f ('.' * $Width), (Format-Size $Current)
     }
 
-    Write-Host "`r$($text.PadRight(76))" -NoNewline -ForegroundColor DarkCyan
+    if ($Script:CanRedraw) {
+        Write-Host "`r$($text.PadRight(76))" -NoNewline -ForegroundColor DarkCyan
+        return
+    }
+
+    # Redirected output: one line per decile, plus the final state.
+    $decile = [int]([math]::Floor($ratio * 10))
+    if ($Final -or $decile -gt $Script:LastLoggedDecile) {
+        $Script:LastLoggedDecile = $decile
+        Write-Host $text -ForegroundColor DarkCyan
+    }
 }
 
 #endregion
@@ -267,7 +299,7 @@ function Test-Windows {
     return [bool] $IsWindows
 }
 
-function Initialize-Tls {
+function Initialize-SecurityProtocol {
     # Windows PowerShell defaults to SSL3/TLS1.0 on older systems, which GitHub rejects.
     try {
         $wanted = [Net.SecurityProtocolType]::Tls12
@@ -311,6 +343,49 @@ function Test-Elevated {
 #region ------------------------------------------------------------- releases
 
 <#
+    Normalises the two different failures Invoke-RestMethod can raise, because they are
+    not interchangeable:
+      - Windows PowerShell 5.1 throws System.Net.WebException, whose Response is an
+        HttpWebResponse with a string-indexed header collection;
+      - PowerShell 6+ throws Microsoft.PowerShell.Commands.HttpResponseException, whose
+        Response is an HttpResponseMessage with a TryGetValues-based header collection.
+    Catching only one of them silently disables every friendly message on the other
+    edition, which is exactly the sort of bug nobody notices until a user reports a
+    cryptic stack trace.
+
+    Returns @{ Status = <int, 0 when the request never reached the server>; RateLimitReset = <DateTimeOffset or $null> }.
+#>
+function Get-HttpErrorInfo {
+    param([Parameter(Mandatory)] $ErrorRecord)
+
+    $info     = @{ Status = 0; RateLimitReset = $null }
+    $response = $ErrorRecord.Exception.PSObject.Properties['Response'] | ForEach-Object { $_.Value }
+    if (-not $response) { return $info }
+
+    try { $info.Status = [int] $response.StatusCode } catch { Write-Verbose 'Response carried no readable status code.' }
+
+    $resetRaw = $null
+    try {
+        if ($response.Headers -is [System.Net.WebHeaderCollection]) {
+            $resetRaw = $response.Headers['X-RateLimit-Reset']            # PS 5.1
+        }
+        else {
+            $values = $null                                               # PS 6+
+            if ($response.Headers.TryGetValues('X-RateLimit-Reset', [ref] $values)) {
+                $resetRaw = @($values)[0]
+            }
+        }
+    }
+    catch { Write-Verbose 'Rate-limit headers were not readable on this response type.' }
+
+    if ($resetRaw) {
+        try { $info.RateLimitReset = [DateTimeOffset]::FromUnixTimeSeconds([long] $resetRaw).ToLocalTime() } catch { Write-Verbose "Unparsable X-RateLimit-Reset value: $resetRaw" }
+    }
+
+    return $info
+}
+
+<#
     Fetches the latest release, translating the GitHub failure modes people actually
     hit (rate limiting, no releases, no network) into readable messages.
 #>
@@ -318,30 +393,31 @@ function Get-LatestRelease {
     param([Parameter(Mandatory)][string] $Repository)
 
     $uri = "$($Script:ApiRoot)/repos/$Repository/releases/latest"
+    Write-Verbose "GET $uri"
+
     try {
         return Invoke-RestMethod -Uri $uri -Headers @{
             'User-Agent' = $Script:UserAgent
             'Accept'     = 'application/vnd.github+json'
         } -TimeoutSec 30
     }
-    catch [System.Net.WebException] {
-        $response = $_.Exception.Response
-        $status   = if ($response) { [int] $response.StatusCode } else { 0 }
+    catch {
+        $info = Get-HttpErrorInfo -ErrorRecord $_
+        Write-Verbose "Request failed with HTTP $($info.Status): $($_.Exception.GetType().FullName)"
 
-        switch ($status) {
+        switch ($info.Status) {
             403 {
-                $resetHeader = $response.Headers['X-RateLimit-Reset']
                 $hint = 'GitHub rejected the request (HTTP 403).'
-                if ($resetHeader) {
-                    $reset   = [DateTimeOffset]::FromUnixTimeSeconds([long] $resetHeader).ToLocalTime()
-                    $minutes = [math]::Max(1, [int]($reset - [DateTimeOffset]::Now).TotalMinutes)
-                    $hint    = "GitHub API rate limit reached (60 requests/hour per IP). Try again in about $minutes minute(s), around $($reset.ToString('HH:mm'))."
+                if ($info.RateLimitReset) {
+                    $minutes = [math]::Max(1, [int]($info.RateLimitReset - [DateTimeOffset]::Now).TotalMinutes)
+                    $hint    = "GitHub API rate limit reached (60 requests/hour per IP). Try again in about $minutes minute(s), around $($info.RateLimitReset.ToString('HH:mm'))."
                 }
                 throw [System.Exception]::new($hint, $_.Exception)
             }
-            404 { throw [System.Exception]::new("Repository '$Repository' has no published release, or does not exist.", $_.Exception) }
-            0   { throw [System.Exception]::new("Could not reach $($Script:ApiRoot). Check your internet connection or proxy settings.", $_.Exception) }
-            default { throw [System.Exception]::new("GitHub returned HTTP $status for $uri.", $_.Exception) }
+            429     { throw [System.Exception]::new('GitHub is throttling this client (HTTP 429). Wait a few minutes and retry.', $_.Exception) }
+            404     { throw [System.Exception]::new("Repository '$Repository' has no published release, or does not exist.", $_.Exception) }
+            0       { throw [System.Exception]::new("Could not reach $($Script:ApiRoot). Check your internet connection or proxy settings.", $_.Exception) }
+            default { throw [System.Exception]::new("GitHub returned HTTP $($info.Status) for $uri.", $_.Exception) }
         }
     }
 }
@@ -408,23 +484,56 @@ function ConvertTo-ComparableVersion {
 
 #region -------------------------------------------------------------- process
 
-function Stop-RunningInstances {
-    param([Parameter(Mandatory)][string] $Name)
+<#
+    Stops only the instances started from $ExePath. Matching on the process name alone
+    would also kill a second, unrelated installation of the same application living in
+    another folder - which the user never asked us to touch.
 
-    $running = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
-    if ($running.Count -eq 0) {
+    A process whose Path cannot be read (another user, insufficient rights) is left
+    alone rather than killed on a guess.
+#>
+function Stop-RunningInstance {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string] $Name,
+        [Parameter(Mandatory)][string] $ExePath
+    )
+
+    $candidates = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
+    if ($candidates.Count -eq 0) {
         Write-Detail 'No running instance.'
         return
     }
 
-    if (-not $PSCmdlet.ShouldProcess("$($running.Count) instance(s) of $Name", 'Stop process')) { return }
+    $running = @()
+    $unknown = 0
+    foreach ($process in $candidates) {
+        $path = $null
+        try { $path = $process.Path } catch { Write-Verbose "PID $($process.Id): path not readable." }
+
+        if (-not $path) { $unknown++; continue }
+        if ([string]::Equals($path, $ExePath, [StringComparison]::OrdinalIgnoreCase)) { $running += $process }
+        else { Write-Verbose "Ignoring PID $($process.Id) from a different location: $path" }
+    }
+
+    if ($unknown -gt 0) {
+        Write-Warn "$unknown process(es) named $Name could not be inspected and were left running."
+    }
+
+    if ($running.Count -eq 0) {
+        Write-Detail "No running instance started from $ExePath."
+        return
+    }
+
+    if (-not $PSCmdlet.ShouldProcess("$($running.Count) instance(s) of $ExePath", 'Stop process')) { return }
 
     $running | Stop-Process -Force -ErrorAction SilentlyContinue
     $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
     Write-Ok "Closed $($running.Count) instance(s)."
 }
 
-function Start-Instances {
+function Start-Instance {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)][string] $Path,
         [object[]] $Shortcuts = @()
@@ -497,8 +606,8 @@ function Save-Asset {
             }
         }
 
-        Write-ProgressBar -Current $downloaded -Total $total
-        Write-Host ''
+        Write-ProgressBar -Current $downloaded -Total $total -Final
+        if ($Script:CanRedraw) { Write-Host '' }
 
         if ($total -gt 0 -and $downloaded -ne $total) {
             throw "Incomplete download: got $downloaded of $total bytes."
@@ -606,11 +715,61 @@ function Move-WithRetry {
     }
 }
 
+<#
+    Puts the verified download in place as safely as the filesystem allows.
+
+    The new file is downloaded next to the target, on the same volume, so this final
+    move is a rename rather than a cross-volume copy: it either happens or it does not,
+    and an interrupted run can no longer leave a half-written executable behind. The
+    previous build is kept as <name>.bak until the swap succeeds, and restored if it
+    does not, so a failure never costs the user a working application.
+#>
+function Install-Executable {
+    param(
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $Destination
+    )
+
+    $backup   = "$Destination.bak"
+    $restored = $false
+
+    if (Test-Path -LiteralPath $Destination) {
+        Write-Verbose "Backing up the current build to $backup"
+        Move-WithRetry -Source $Destination -Destination $backup
+    }
+
+    try {
+        Move-WithRetry -Source $Source -Destination $Destination
+    }
+    catch {
+        if (Test-Path -LiteralPath $backup) {
+            try {
+                Move-Item -LiteralPath $backup -Destination $Destination -Force
+                $restored = $true
+            }
+            catch { Write-Verbose 'Restoring the backup failed as well.' }
+        }
+        if ($restored) { Write-Warn 'Install failed - the previous build was restored.' }
+        else           { Write-Fail "Install failed and the previous build is still at $backup - rename it back manually." }
+        throw
+    }
+
+    if (Test-Path -LiteralPath $backup) {
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue -WhatIf:$false
+    }
+}
+
 #endregion
 
 #region ----------------------------------------------------------------- main
 
 function Invoke-Update {
+    # SupportsShouldProcess here, and on the helpers below, so -WhatIf / -Confirm flow
+    # down through $WhatIfPreference instead of relying on the script's $PSCmdlet
+    # leaking into nested scopes.
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
     Write-Host ''
     Write-Rule 'Usage Monitor for Claude - updater'
 
@@ -619,7 +778,10 @@ function Invoke-Update {
         return $Script:ExitPlatform
     }
 
-    Initialize-Tls
+    $Script:CanRedraw = Test-CanRedraw
+    Write-Verbose "PowerShell $($PSVersionTable.PSVersion) on $($env:PROCESSOR_ARCHITECTURE); in-place progress redraw: $($Script:CanRedraw)"
+
+    Initialize-SecurityProtocol
 
     # Resolve paths.
     if (-not $InstallDir) {
@@ -688,9 +850,12 @@ function Invoke-Update {
     }
 
     Write-Step "Closing running instances of $processName..."
-    Stop-RunningInstances -Name $processName
+    Stop-RunningInstance -Name $processName -ExePath $exePath
 
-    $tempExe = Join-Path ([System.IO.Path]::GetTempPath()) "$processName-$($tagVersion.ToString(3))-$([guid]::NewGuid().ToString('N')).exe"
+    # Staged next to the target, on the same volume, so the final swap is a rename and
+    # not an interruptible cross-volume copy. See Install-Executable.
+    $tempExe = Join-Path $InstallDir "$ExeName.download-$([guid]::NewGuid().ToString('N')).tmp"
+    Write-Verbose "Staging file: $tempExe"
     try {
         Write-Step "Downloading $($asset.name) ($(Format-Size $asset.size))..."
         if ($PSCmdlet.ShouldProcess($asset.browser_download_url, 'Download asset')) {
@@ -704,7 +869,7 @@ function Invoke-Update {
 
             Write-Step "Replacing $exePath..."
             try {
-                Move-WithRetry -Source $tempExe -Destination $exePath
+                Install-Executable -Source $tempExe -Destination $exePath
             }
             catch {
                 Write-Fail "Could not replace the executable: $($_.Exception.Message)"
@@ -721,7 +886,7 @@ function Invoke-Update {
 
     $shortcutFilter = "$ExeName - *.lnk"
     $extraShortcuts = @(Get-ChildItem -LiteralPath $InstallDir -Filter $shortcutFilter -ErrorAction SilentlyContinue)
-    Start-Instances -Path $exePath -Shortcuts $extraShortcuts
+    Start-Instance -Path $exePath -Shortcuts $extraShortcuts
 
     Write-Host ''
     Write-Ok "Update complete: version $($tagVersion.ToString(3))."
@@ -729,23 +894,27 @@ function Invoke-Update {
     return $Script:ExitOk
 }
 
-try {
-    exit (Invoke-Update)
-}
-catch {
-    Write-Host ''
-    Write-Fail $_.Exception.Message
-    if ($_.ScriptStackTrace) {
-        Write-Detail 'Run with -Verbose for details, or report the trace below.'
-        Write-Detail ($_.ScriptStackTrace -replace "`r?`n", ' | ')
+# Dot-sourcing the script (". .\Update-UsageMonitor.ps1") loads the functions without
+# running anything, which is how the Pester suite gets at them.
+if ($MyInvocation.InvocationName -ne '.') {
+    try {
+        exit (Invoke-Update)
     }
-    Write-Host ''
-    if (-not $NonInteractive -and [Environment]::UserInteractive -and $Host.Name -eq 'ConsoleHost') {
-        # Keep the window open when launched by double-click.
-        Write-Host 'Press Enter to close...' -ForegroundColor DarkGray -NoNewline
-        [void] (Read-Host)
+    catch {
+        Write-Host ''
+        Write-Fail $_.Exception.Message
+        if ($_.ScriptStackTrace) {
+            Write-Detail 'Run with -Verbose for details, or report the trace below.'
+            Write-Detail ($_.ScriptStackTrace -replace "`r?`n", ' | ')
+        }
+        Write-Host ''
+        if (-not $NonInteractive -and [Environment]::UserInteractive -and $Host.Name -eq 'ConsoleHost') {
+            # Keep the window open when launched by double-click.
+            Write-Host 'Press Enter to close...' -ForegroundColor DarkGray -NoNewline
+            [void] (Read-Host)
+        }
+        exit $Script:ExitError
     }
-    exit $Script:ExitError
 }
 
 #endregion
