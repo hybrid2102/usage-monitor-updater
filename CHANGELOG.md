@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-31
+
+### Fixed
+
+- Markdown links in the release notes were printed verbatim, so a line like
+  `[Full changelog](https://github.com/.../compare/v1.20.0...v1.21.0)` filled the width
+  of the terminal with a URL and was then truncated - the reader lost the sentence and
+  gained nothing. Links now show their text; bare URLs are left alone, since there the
+  address is the information, and code blocks stay verbatim.
+
+### Added
+
+- A recording of a real run in the README, showing the release notes staying readable
+  while the download progresses.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added
@@ -128,7 +143,8 @@ in 1.0.1 the pipeline was rejected by GitHub before it could run a single test.
 - `-Force`, `-SkipChangelog`, `-NonInteractive`, `-SkipSignatureCheck`, `-Repo`,
   `-InstallDir`, `-ExeName`, plus `-WhatIf` support and documented exit codes.
 
-[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/hybrid2102/usage-monitor-updater/compare/v1.0.1...v1.0.2

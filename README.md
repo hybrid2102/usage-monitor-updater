@@ -21,26 +21,12 @@ This script does all of it in one double-click, **and puts the release notes on 
 while the download runs** — so the time you spend waiting is the time you spend reading
 what changed, instead of watching a progress bar.
 
-```text
--- What's new in v1.21.0 ---------------------------------------
+![The updater running: release notes on screen while the download progresses](docs/demo.gif)
 
-  Added
-
-  - New `icon_style` setting - set it to "numbers" to show both
-    icon_fields values as two stacked percentages on the tray icon
-  - Extra usage without a monthly limit now appears in the popup
-
-  Fixed
-
-  - On systems with a non-UTF-8 code page, the tray icon no longer
-    stops updating after an automatic token renewal
-
-  Full release page: https://github.com/jens-duttke/...
-----------------------------------------------------------------
-
-==> Downloading UsageMonitorForClaude.exe (12.7 MB)...
-    [######################............]  64%  8.1 MB / 12.7 MB
-```
+<sub>A real run, recorded from the script's own output stream. Colours are reapplied
+after capture (PowerShell drops them when output is redirected), the install path is
+replaced with a generic one, and the download is slowed down — it really took 2.3
+seconds, which is not long enough to read anything.</sub>
 
 The progress indicator is a single line redrawn in place *below* the notes. `Write-Progress`
 would paint a banner across the top of the console and cover them — which is exactly why it

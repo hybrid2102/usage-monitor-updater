@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.1.0
+.VERSION 1.1.1
 
 .GUID be86f5c3-bbbf-44ad-8fb1-4b16b4faafef
 
@@ -229,6 +229,23 @@ function Read-YesNo {
 }
 
 <#
+    Turns markdown links into their visible text: "[Full changelog](https://...)" reads
+    as "Full changelog". Release notes are written for a web page, where the URL is
+    hidden behind the text; printed verbatim in a terminal the URL crowds the line out
+    and usually gets truncated, so the reader loses the sentence and gains nothing.
+
+    Bare URLs are left alone - there the address IS the information.
+#>
+function Convert-MarkdownLink {
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Text)
+
+    # Images first: their alt text is what is worth keeping.
+    $result = [regex]::Replace($Text, '!\[([^\]]*)\]\([^)]*\)', '$1')
+    # Then ordinary links. URLs containing brackets are rare enough not to chase.
+    return [regex]::Replace($result, '\[([^\]]+)\]\([^)]*\)', '$1')
+}
+
+<#
     Prints the release notes with minimal markdown rendering. Called BEFORE the
     download starts; the progress indicator below is a single line redrawn in place,
     so this text stays on screen and readable for the whole download.
@@ -253,9 +270,13 @@ function Show-Changelog {
                 continue
             }
             if ($inCodeBlock) {
+                # Code is shown verbatim: rewriting anything inside it would be a lie
+                # about what the release notes say to type.
                 Write-Host "    $($line.TrimEnd())" -ForegroundColor DarkGreen
                 continue
             }
+
+            $line = Convert-MarkdownLink -Text $line
 
             switch -Regex ($line) {
                 '^\s*#{1,6}\s*(.+)$' {

@@ -202,3 +202,34 @@ Describe 'Test-GalleryInstall' {
         Test-GalleryInstall -Path $Path | Should -BeFalse
     }
 }
+
+Describe 'Convert-MarkdownLink' {
+    It 'keeps the link text and drops the URL' {
+        Convert-MarkdownLink -Text '[Full changelog](https://github.com/a/b/compare/v1...v2)' |
+            Should -Be 'Full changelog'
+    }
+
+    It 'handles several links on one line' {
+        Convert-MarkdownLink -Text 'thanks to [@jo](https://github.com/jo) for reporting [#80](https://github.com/a/b/issues/80)' |
+            Should -Be 'thanks to @jo for reporting #80'
+    }
+
+    It 'keeps the alt text of an image' {
+        Convert-MarkdownLink -Text '![build status](https://img.shields.io/x.svg)' |
+            Should -Be 'build status'
+    }
+
+    It 'leaves a bare URL alone, because there the address is the information' {
+        $url = 'See https://github.com/a/b/releases for details'
+        Convert-MarkdownLink -Text $url | Should -Be $url
+    }
+
+    It 'leaves text without links untouched' {
+        Convert-MarkdownLink -Text 'Fixed a crash on startup [see notes]' |
+            Should -Be 'Fixed a crash on startup [see notes]'
+    }
+
+    It 'accepts an empty line without throwing' {
+        Convert-MarkdownLink -Text '' | Should -Be ''
+    }
+}
